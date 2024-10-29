@@ -2,6 +2,9 @@
 using MimeKit;
 using MailKit.Net.Smtp;
 using SendingEmailWithASPNETCore.Configuration;
+using System;
+using System.Net;
+using System.Net.Mail;
 
 namespace SendingEmailWithASPNETCore.Services
 {
@@ -13,67 +16,42 @@ namespace SendingEmailWithASPNETCore.Services
         {
             Mail_Setting = options.Value ?? throw new ArgumentNullException(nameof(options), "Mail settings cannot be null.");
 
-            // Log the values for debugging
-            if (string.IsNullOrWhiteSpace(Mail_Setting.EmailId))
-            {
-                Log("EmailId is null or empty");
-            }
-            else
-            {
-                Log($"MailSetting - EmailId: {Mail_Setting.EmailId}, Name: {Mail_Setting.Name}");
-            }
+            // Debug log untuk memeriksa nilai yang diterima
+            Console.WriteLine($"Debug MailSetting - EmailId: {Mail_Setting.EmailId}, Name: {Mail_Setting.Name}");
         }
 
         public bool SendMail(MailData Mail_Data)
         {
             try
             {
-                // Validate Mail_Data and Mail_Setting before proceeding
-                if (Mail_Data == null)
+                // Validasi input
+                if (Mail_Data == null || string.IsNullOrWhiteSpace(Mail_Data.EmailToId) || string.IsNullOrWhiteSpace(Mail_Data.EmailToName))
                 {
-                    Log("Mail_Data cannot be null.");
+                    Log("Recipient details are missing.");
                     return false;
                 }
 
-                // Check if EmailId or Name is null or empty
-                if (string.IsNullOrWhiteSpace(Mail_Setting.EmailId))
+                // Cek kredensial pengirim
+                if (string.IsNullOrWhiteSpace(Mail_Setting.EmailId) || string.IsNullOrWhiteSpace(Mail_Setting.UserName) || string.IsNullOrWhiteSpace(Mail_Setting.Password))
                 {
-                    Log("Sender EmailId cannot be null or empty.");
-                    return false;
-                }
-                if (string.IsNullOrWhiteSpace(Mail_Setting.Name))
-                {
-                    Log("Sender Name cannot be null or empty.");
-                    return false;
-                }
-                if (string.IsNullOrWhiteSpace(Mail_Data.EmailToId))
-                {
-                    Log("Recipient EmailToId cannot be null or empty.");
-                    return false;
-                }
-                if (string.IsNullOrWhiteSpace(Mail_Data.EmailToName))
-                {
-                    Log("Recipient EmailToName cannot be null or empty.");
+                    Log("Sender EmailId or credentials are missing.");
                     return false;
                 }
 
-                //MimeMessage - a class from Mimekit
                 MimeMessage email_Message = new MimeMessage();
-                MailboxAddress email_From = new MailboxAddress(Mail_Setting.Name.Trim(), Mail_Setting.EmailId);
-                MailboxAddress email_To = new MailboxAddress(Mail_Data.EmailToName.Trim(), Mail_Data.EmailToId);
-                email_Message.From.Add(email_From);
-                email_Message.To.Add(email_To);
+                email_Message.From.Add(new MailboxAddress(Mail_Setting.Name, Mail_Setting.EmailId));
+                email_Message.To.Add(new MailboxAddress(Mail_Data.EmailToName, Mail_Data.EmailToId));
                 email_Message.Subject = Mail_Data.EmailSubject;
 
-                BodyBuilder emailBodyBuilder = new BodyBuilder();
-                emailBodyBuilder.TextBody = Mail_Data.EmailBody;
+                BodyBuilder emailBodyBuilder = new BodyBuilder { TextBody = Mail_Data.EmailBody };
                 email_Message.Body = emailBodyBuilder.ToMessageBody();
 
-                // Connect to the SMTP server
-                using (var MailClient = new SmtpClient())
+                using (var MailClient = new MailKit.Net.Smtp.SmtpClient())
                 {
-                    MailClient.Connect(Mail_Setting.Host, Mail_Setting.Port, Mail_Setting.UseSSL);
-                    MailClient.Authenticate(Mail_Setting.EmailId, Mail_Setting.Password);
+                    // Koneksi dengan STARTTLS di port 587
+                    MailClient.Connect(Mail_Setting.Host, Mail_Setting.Port, MailKit.Security.SecureSocketOptions.StartTls);
+                    MailClient.Authenticate(Mail_Setting.UserName, Mail_Setting.Password); // Perhatikan penggunaan UserName
+
                     MailClient.Send(email_Message);
                     MailClient.Disconnect(true);
                 }
@@ -82,7 +60,6 @@ namespace SendingEmailWithASPNETCore.Services
             }
             catch (Exception ex)
             {
-                // Exception Details
                 Log("Error: " + ex.Message);
                 return false;
             }
